@@ -1,0 +1,14 @@
+*.o
+*.a
+*.so
+*.out
+build/
+backup/
+bin/
+CMakeFiles/
+CMakeCache.txt
+compile_commands.json
+Makefile
+.vscode/
+*.log
+.DS_Store

@@ -1,17 +1,37 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "category.h"
 #include "cli.h"
 #include "plan.h"
 #include "storage.h"
 #include "util.h"
 
-static void print_item(const PlanItem *item) {
-    printf("[%d] %-4s %s %s\n",
-           item->id,
-           plan_status_to_string(item->status),
-           item->created_at,
-           item->text);
+static void print_item(const PlanItem *item, const CategoryList *cats, const SubcategoryList *subcats) {
+    printf("[%d] %-4s %-6s %s", item->id, 
+             plan_status_to_string(item->status), 
+             plan_priority_to_string(item->priority),
+             item->created_at);
+
+    if (item->category_id != -1) {
+        const Category *cat = category_find_by_id(cats, item->category_id);
+        printf(" [%s", cat ? cat->name : "?");
+
+        if (item->subcat_id != -1) {
+            /* find the subcategory name by matching both id and category_id */
+            const char *subname = "?";
+            for (size_t i = 0; i < subcats->len; ++i) {
+                if (subcats->items[i].id == item->subcat_id) {
+                    subname = subcats->items[i].name;
+                    break;
+                }
+            }
+            printf("/%s", subname);
+        }
+        printf("]");
+    }
+
+    printf(" %s\n", item->text);
 }
 
 int main(int argc, char **argv) {
@@ -27,6 +47,12 @@ int main(int argc, char **argv) {
         return 2;
     }
 
+    char cat_path[1024];
+    if (storage_cat_path(cat_path, sizeof(cat_path)) != 0) {
+        fprintf(stderr, "error: could not resolve categories path\n");
+        return 2;
+    }
+
     PlanList list;
     plan_list_init(&list);
 
@@ -36,12 +62,32 @@ int main(int argc, char **argv) {
         return 2;
     }
 
+    CategoryList cats;
+    SubcategoryList subcats;
+    category_list_init(&cats);
+    subcat_list_init(&subcats);
+
+    if (storage_cat_load(cat_path, &cats, &subcats) != 0) {
+        fprintf(stderr, "error: could not load categories: %s\n", cat_path);
+        plan_list_free(&list);
+        category_list_free(&cats);
+        subcat_list_free(&subcats);
+        return 2;
+    }
+
     int rc = 0;
 
     switch (cmd.type) {
         case CMD_LIST:
             for (size_t i = 0; i < list.len; ++i) {
-                print_item(&list.items[i]);
+                print_item(&list.items[i], &cats, &subcats);
+            }
+            break;
+
+        case CMD_OPEN:
+            for (size_t i = 0; i < list.len; ++i) {
+                if (list.items[i].status == PLAN_STATUS_DONE) continue;
+                print_item(&list.items[i], &cats, &subcats);
             }
             break;
 
@@ -52,18 +98,36 @@ int main(int argc, char **argv) {
                 rc = 3;
                 break;
             }
-            print_item(item);
+            print_item(item, &cats, &subcats);
             break;
         }
 
         case CMD_ADD: {
+            /* resolve subcategory → category before creating the item */
+            int cat_id = -1;
+            if (cmd.subcat_id != -1) {
+                int found = 0;
+                for (size_t i = 0; i < subcats.len; ++i) {
+                    if (subcats.items[i].id == cmd.subcat_id) {
+                        cat_id = subcats.items[i].category_id;
+                        found = 1;
+                        break;
+                    }
+                }
+                if (!found) {
+                    fprintf(stderr, "error: subcategory %d not found\n", cmd.subcat_id);
+                    rc = 3;
+                    break;
+                }
+            }
+
             char ts[21];
             if (current_timestamp_utc(ts) != 0) {
                 fprintf(stderr, "error: could not generate timestamp\n");
                 rc = 2;
                 break;
             }
-            int id = plan_add(&list, cmd.text, ts);
+            int id = plan_add(&list, cmd.text, ts, cat_id, cmd.subcat_id);
             if (id < 0 || storage_save(path, &list) != 0) {
                 fprintf(stderr, "error: could not save item\n");
                 rc = 2;
@@ -73,8 +137,47 @@ int main(int argc, char **argv) {
             break;
         }
 
-        case CMD_UPDATE:
-            if (plan_update(&list, cmd.id, cmd.text) != 0 ||
+        case CMD_UPDATE: {
+            /* read the existing item first so we can preserve fields
+               the user did not explicitly provide on this update */
+            const PlanItem *existing = plan_find_by_id_const(&list, cmd.id);
+            if (!existing) {
+                fprintf(stderr, "error: item %d not found\n", cmd.id);
+                rc = 3;
+                break;
+            }
+
+            /* default: keep whatever is already stored on the item;
+               cmd.text == NULL means --text was not passed, so text is preserved too */
+            int cat_id    = existing->category_id;
+            int subcat_id = existing->subcat_id;
+
+            /* only if the user passed a new subcat_id do we validate and override */
+            if (cmd.subcat_id != -1) {
+                int found = 0;
+                for (size_t i = 0; i < subcats.len; ++i) {
+                    if (subcats.items[i].id == cmd.subcat_id) {
+                        /* derive category_id from the subcategory record —
+                           the user only needs to know the subcat id */
+                        cat_id    = subcats.items[i].category_id;
+                        subcat_id = cmd.subcat_id;
+                        found = 1;
+                        break;
+                    }
+                }
+                if (!found) {
+                    fprintf(stderr, "error: subcategory %d not found\n", cmd.subcat_id);
+                    rc = 3;
+                    break;
+                }
+            }
+            PlanPriority priority = existing->priority;  /* default: keep existing */
+            if (cmd.has_priority) {
+                priority = cmd.priority;                 /* override only if --priority was given */
+            }
+
+
+            if (plan_update(&list, cmd.id, cmd.text, cat_id, subcat_id, priority) != 0 ||
                 storage_save(path, &list) != 0) {
                 fprintf(stderr, "error: could not update item %d\n", cmd.id);
                 rc = 3;
@@ -82,6 +185,7 @@ int main(int argc, char **argv) {
                 printf("updated [%d]\n", cmd.id);
             }
             break;
+        }
 
         case CMD_DELETE:
             if (plan_delete(&list, cmd.id) != 0 ||
@@ -103,6 +207,49 @@ int main(int argc, char **argv) {
             }
             break;
 
+        case CMD_CAT_ADD: {
+            int id = category_add(&cats, cmd.text);
+            if (id < 0 || storage_cat_save(cat_path, &cats, &subcats) != 0) {
+                fprintf(stderr, "error: could not save category\n");
+                rc = 2;
+                break;
+            }
+            printf("category added [%d]\n", id);
+            break;
+        }
+
+        case CMD_CAT_LIST:
+            for (size_t i = 0; i < cats.len; ++i) {
+                printf("[%d] %s\n", cats.items[i].id, cats.items[i].name);
+            }
+            break;
+
+        case CMD_SUBCAT_ADD: {
+            if (!category_find_by_id(&cats, cmd.id)) {
+                fprintf(stderr, "error: category %d not found\n", cmd.id);
+                rc = 3;
+                break;
+            }
+            int id = subcat_add(&subcats, cmd.id, cmd.text);
+            if (id < 0 || storage_cat_save(cat_path, &cats, &subcats) != 0) {
+                fprintf(stderr, "error: could not save subcategory\n");
+                rc = 2;
+                break;
+            }
+            printf("subcategory added [%d]\n", id);
+            break;
+        }
+
+        case CMD_SUBCAT_LIST:
+            for (size_t i = 0; i < subcats.len; ++i) {
+                const Category *cat = category_find_by_id(&cats, subcats.items[i].category_id);
+                printf("[%d] %s / %s\n",
+                       subcats.items[i].id,
+                       cat ? cat->name : "?",
+                       subcats.items[i].name);
+            }
+            break;
+
         default:
             cli_print_usage(argv[0]);
             rc = 1;
@@ -110,5 +257,7 @@ int main(int argc, char **argv) {
     }
 
     plan_list_free(&list);
+    category_list_free(&cats);
+    subcat_list_free(&subcats);
     return rc;
 }

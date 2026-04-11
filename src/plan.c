@@ -61,11 +61,14 @@ const PlanItem *plan_find_by_id_const(const PlanList *list, int id) {
     return NULL;
 }
 
-int plan_add(PlanList *list, const char *text, const char *timestamp) {
+int plan_add(PlanList *list, const char *text, const char *timestamp, int category_id, int subcat_id) {
     PlanItem item;
     item.id = plan_next_id(list);
     item.status = PLAN_STATUS_OPEN;
+    item.priority = PRIO_NORMAL;
     memcpy(item.created_at, timestamp, 21);
+    item.category_id = category_id;
+    item.subcat_id = subcat_id;
     item.text = xstrdup(text);
     if (!item.text) return -1;
 
@@ -77,15 +80,22 @@ int plan_add(PlanList *list, const char *text, const char *timestamp) {
     return item.id;
 }
 
-int plan_update(PlanList *list, int id, const char *text) {
+int plan_update(PlanList *list, int id, const char *text, int category_id, int subcat_id, PlanPriority priority){
+
     PlanItem *item = plan_find_by_id(list, id);
     if (!item) return -1;
 
-    char *dup = xstrdup(text);
-    if (!dup) return -1;
+    /* text is optional — NULL means the caller wants to preserve the existing text */
+    if (text != NULL) {
+        char *dup = xstrdup(text);
+        if (!dup) return -1;
+        free(item->text);
+        item->text = dup;
+    }
 
-    free(item->text);
-    item->text = dup;
+    item->category_id = category_id;
+    item->subcat_id = subcat_id;
+    item->priority = priority;
     return 0;
 }
 
@@ -129,3 +139,34 @@ int plan_status_from_string(const char *s, PlanStatus *out) {
     }
     return -1;
 }
+
+
+const char *plan_priority_to_string(PlanPriority priority) {
+    switch (priority) {
+        case PRIO_URGENT: return "urgent";
+        case PRIO_HIGH: return "high";
+        case PRIO_NORMAL: return "normal";
+        case PRIO_LOW: return "low";
+        default: return "normal";
+    }
+}
+
+int plan_priority_from_string(const char *s, PlanPriority *out) {
+    if (strcmp(s, "urgent") == 0) {
+        *out = PRIO_URGENT;
+        return 0;
+    }
+    if (strcmp(s, "high") == 0) {
+        *out = PRIO_HIGH;
+        return 0;
+    }
+    if (strcmp(s, "normal") == 0) {
+        *out = PRIO_NORMAL;
+        return 0;
+    }
+    if (strcmp(s, "low") == 0) {
+        *out = PRIO_LOW;
+        return 0;
+    }
+    return -1;
+}   

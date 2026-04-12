@@ -24,6 +24,7 @@ typedef struct {
     int has_priority;     /* 0 = not provided, 1 = user explicitly set it */
     int has_status;       /* 0 = not provided, 1 = user explicitly set it */
     int sortByPriority; /* 0 = no, 1 = yes */
+    int show_all;       /* 0 = no, 1 = yes (show all items regardless of status) */
     PlanPriority priority;
     PlanStatus status;
     const char *text;

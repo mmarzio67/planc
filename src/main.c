@@ -94,12 +94,15 @@ int main(int argc, char **argv) {
                 qsort(list.items, list.len, sizeof(PlanItem), compare_by_priority);
             }
             for (size_t i = 0; i < list.len; ++i) {
-                /* if no --status given, hide done and archived by default */
-                if (!cmd.has_status) {
+                if (cmd.show_all) {
+                    /* --all: no status filtering, show everything */
+                } else if (cmd.has_status) {
+                    /* --status <value>: show only items matching that status */
+                    if (list.items[i].status != cmd.status) continue;
+                } else {
+                    /* default: hide done and archived, show only actionable items */
                     if (list.items[i].status == PLAN_STATUS_DONE) continue;
                     if (list.items[i].status == PLAN_STATUS_ARCHIVED) continue;
-                } else {
-                    if (list.items[i].status != cmd.status) continue;
                 }
                 if (cmd.has_priority && list.items[i].priority != cmd.priority) continue;
                 print_item(&list.items[i], &cats, &subcats);

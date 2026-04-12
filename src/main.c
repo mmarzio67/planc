@@ -7,6 +7,12 @@
 #include "storage.h"
 #include "util.h"
 
+static int compare_by_priority(const void *a, const void *b) {
+    const PlanItem *ia = (const PlanItem *)a;
+    const PlanItem *ib = (const PlanItem *)b;
+    return ia->priority - ib->priority;
+}
+
 static void print_item(const PlanItem *item, const CategoryList *cats, const SubcategoryList *subcats) {
     printf("[%d] %-4s %-6s %s", item->id, 
              plan_status_to_string(item->status), 
@@ -83,14 +89,17 @@ int main(int argc, char **argv) {
 
     switch (cmd.type) {
         case CMD_LIST:
+            /* sort in place before iterating — only for display, does not affect storage */
+            if (cmd.sortByPriority) {
+                qsort(list.items, list.len, sizeof(PlanItem), compare_by_priority);
+            }
             for (size_t i = 0; i < list.len; ++i) {
-                /* skip item if it does not match the optional --status filter */
                 if (cmd.has_status && list.items[i].status != cmd.status) continue;
-                /* skip item if it does not match the optional --priority filter */
                 if (cmd.has_priority && list.items[i].priority != cmd.priority) continue;
                 print_item(&list.items[i], &cats, &subcats);
             }
             break;
+
 
         case CMD_SHOW: {
             const PlanItem *item = plan_find_by_id_const(&list, cmd.id);

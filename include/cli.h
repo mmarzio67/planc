@@ -23,6 +23,7 @@ typedef struct {
     int subcat_id;        /* -1 = not assigned */
     int has_priority;     /* 0 = not provided, 1 = user explicitly set it */
     int has_status;       /* 0 = not provided, 1 = user explicitly set it */
+    int sortByPriority; /* 0 = no, 1 = yes */
     PlanPriority priority;
     PlanStatus status;
     const char *text;

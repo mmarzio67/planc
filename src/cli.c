@@ -37,6 +37,9 @@ int cli_parse(int argc, char **argv, Command *out) {
                 if (i + 1 >= argc) return -1;
                 if (plan_priority_from_string(argv[++i], &out->priority) != 0) return -1;
                 out->has_priority = 1;
+                
+            } else if (strcmp(argv[i], "--sort-priority") == 0) {    
+                out->sortByPriority = 1;
             } else {
                 return -1;  /* unknown flag */
             }
@@ -142,7 +145,7 @@ int cli_parse(int argc, char **argv, Command *out) {
 void cli_print_usage(const char *progname) {
     fprintf(stderr,
         "Usage:\n"
-        "  %s list [--status \"status\"] [--priority \"priority\"]\n"
+        "  %s list [--status \"status\"] [--priority \"priority\"] --sort-priority\n"
         "  %s add \"text\" [subcat_id]\n"
         "  %s update <id> [--text \"text\"] [--priority \"priority\"] [--subcat <id>]\n"
         "  %s delete <id>\n"

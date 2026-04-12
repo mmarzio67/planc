@@ -11,7 +11,6 @@ typedef enum {
     CMD_DELETE,
     CMD_DONE,
     CMD_SHOW,
-    CMD_OPEN,
     CMD_CAT_ADD,
     CMD_CAT_LIST,
     CMD_SUBCAT_ADD,

@@ -84,16 +84,12 @@ int main(int argc, char **argv) {
     switch (cmd.type) {
         case CMD_LIST:
             for (size_t i = 0; i < list.len; ++i) {
-                print_item(&list.items[i], &cats, &subcats);
-            }
-            break;
-
-        case CMD_OPEN:
-            for (size_t i = 0; i < list.len; ++i) {
+                /* skip item if it does not match the optional --status filter */
                 if (cmd.has_status && list.items[i].status != cmd.status) continue;
+                /* skip item if it does not match the optional --priority filter */
                 if (cmd.has_priority && list.items[i].priority != cmd.priority) continue;
                 print_item(&list.items[i], &cats, &subcats);
-    }
+            }
             break;
 
         case CMD_SHOW: {

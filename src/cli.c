@@ -87,14 +87,17 @@ int cli_parse(int argc, char **argv, Command *out) {
                 /* parse the string value into the enum — returns -1 if unrecognized */
                 if (plan_priority_from_string(argv[++i], &out->priority) != 0) return -1;
                 out->has_priority = 1;  /* mark that user explicitly provided a priority */
+            } else if (strcmp(argv[i], "--status") == 0) {
+                if (i + 1 >= argc) return -1;
+                if (plan_status_from_string(argv[++i], &out->status) != 0) return -1;
+                out->has_status = 1;
             } else {
                 return -1;  /* unknown flag */
             }
         }
 
         /* at least one flag must be provided — otherwise nothing to update */
-        if (out->text == NULL && out->subcat_id == -1 && !out->has_priority) return -1;
-
+        if (out->text == NULL && out->subcat_id == -1 && !out->has_priority && !out->has_status) return -1;
         return 0;
     }
 
@@ -147,7 +150,7 @@ void cli_print_usage(const char *progname) {
         "Usage:\n"
         "  %s list [--status \"status\"] [--priority \"priority\"] --sort-priority\n"
         "  %s add \"text\" [subcat_id]\n"
-        "  %s update <id> [--text \"text\"] [--priority \"priority\"] [--subcat <id>]\n"
+        "  %s update <id> [--text \"text\"] [--priority \"priority\"] [--subcat <id>] [--status \"status\"]\n"
         "  %s delete <id>\n"
         "  %s show <id>\n"
         "  %s cat list\n"

@@ -11,6 +11,7 @@ typedef enum {
 } PlanStatus;
 
 typedef enum {
+    PRIO_TODAY,
     PRIO_URGENT,
     PRIO_HIGH,
     PRIO_NORMAL,
@@ -45,7 +46,7 @@ const PlanItem *plan_find_by_id_const(const PlanList *list, int id);
 
 /* operations */
 int plan_add(PlanList *list, const char *text, const char *timestamp, int category_id, int subcat_id);
-int plan_update(PlanList *list, int id, const char *text, int category_id, int subcat_id, PlanPriority priority);
+int plan_update(PlanList *list, int id, const char *text, int category_id, int subcat_id, PlanPriority priority, PlanStatus status);
 int plan_delete(PlanList *list, int id);
 int plan_mark_done(PlanList *list, int id);
 

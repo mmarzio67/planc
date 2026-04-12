@@ -80,8 +80,7 @@ int plan_add(PlanList *list, const char *text, const char *timestamp, int catego
     return item.id;
 }
 
-int plan_update(PlanList *list, int id, const char *text, int category_id, int subcat_id, PlanPriority priority){
-
+int plan_update(PlanList *list, int id, const char *text, int category_id, int subcat_id, PlanPriority priority, PlanStatus status) {
     PlanItem *item = plan_find_by_id(list, id);
     if (!item) return -1;
 
@@ -94,8 +93,9 @@ int plan_update(PlanList *list, int id, const char *text, int category_id, int s
     }
 
     item->category_id = category_id;
-    item->subcat_id = subcat_id;
-    item->priority = priority;
+    item->subcat_id   = subcat_id;
+    item->priority    = priority;
+    item->status      = status;
     return 0;
 }
 
@@ -124,6 +124,8 @@ const char *plan_status_to_string(PlanStatus status) {
     switch (status) {
         case PLAN_STATUS_OPEN: return "open";
         case PLAN_STATUS_DONE: return "done";
+        case PLAN_STATUS_WAITING: return "waiting";
+        case PLAN_STATUS_ARCHIVED: return "archived";
         default: return "open";
     }
 }
@@ -137,12 +139,21 @@ int plan_status_from_string(const char *s, PlanStatus *out) {
         *out = PLAN_STATUS_DONE;
         return 0;
     }
+    if (strcmp(s, "waiting") == 0) {
+        *out = PLAN_STATUS_WAITING;
+        return 0;
+    }
+    if (strcmp(s, "archived") == 0) {
+        *out = PLAN_STATUS_ARCHIVED;
+        return 0;
+    }
     return -1;
 }
 
 
 const char *plan_priority_to_string(PlanPriority priority) {
     switch (priority) {
+        case PRIO_TODAY: return "today";
         case PRIO_URGENT: return "urgent";
         case PRIO_HIGH: return "high";
         case PRIO_NORMAL: return "normal";
@@ -152,6 +163,10 @@ const char *plan_priority_to_string(PlanPriority priority) {
 }
 
 int plan_priority_from_string(const char *s, PlanPriority *out) {
+    if (strcmp(s, "today") == 0) {
+        *out = PRIO_TODAY;
+        return 0;
+    }
     if (strcmp(s, "urgent") == 0) {
         *out = PRIO_URGENT;
         return 0;

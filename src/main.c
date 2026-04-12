@@ -94,14 +94,19 @@ int main(int argc, char **argv) {
                 qsort(list.items, list.len, sizeof(PlanItem), compare_by_priority);
             }
             for (size_t i = 0; i < list.len; ++i) {
-                if (cmd.has_status && list.items[i].status != cmd.status) continue;
+                /* if no --status given, hide done and archived by default */
+                if (!cmd.has_status) {
+                    if (list.items[i].status == PLAN_STATUS_DONE) continue;
+                    if (list.items[i].status == PLAN_STATUS_ARCHIVED) continue;
+                } else {
+                    if (list.items[i].status != cmd.status) continue;
+                }
                 if (cmd.has_priority && list.items[i].priority != cmd.priority) continue;
                 print_item(&list.items[i], &cats, &subcats);
             }
             break;
 
-
-        case CMD_SHOW: {
+            case CMD_SHOW: {
             const PlanItem *item = plan_find_by_id_const(&list, cmd.id);
             if (!item) {
                 fprintf(stderr, "error: item %d not found\n", cmd.id);
@@ -185,9 +190,12 @@ int main(int argc, char **argv) {
             if (cmd.has_priority) {
                 priority = cmd.priority;                 /* override only if --priority was given */
             }
+            PlanStatus status = existing->status;      /* default: keep existing */
+            if (cmd.has_status) {
+                status = cmd.status;                    /* override only if --status was given */
+            }   
 
-
-            if (plan_update(&list, cmd.id, cmd.text, cat_id, subcat_id, priority) != 0 ||
+            if (plan_update(&list, cmd.id, cmd.text, cat_id, subcat_id, priority, status) != 0 ||
                 storage_save(path, &list) != 0) {
                 fprintf(stderr, "error: could not update item %d\n", cmd.id);
                 rc = 3;

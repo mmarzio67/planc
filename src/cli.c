@@ -4,17 +4,28 @@
 #include "cli.h"
 #include "util.h"
 
+/** Parses command-line arguments into a Command struct.
+ * Bridges argv (raw strings) and main() (typed execution) —
+ * main() never touches argv, it only reads from the filled struct.
+ *
+ * @param argc Argument count
+ * @param argv Argument vector
+ * @param out  Output command structure, filled on success
+ * @return 0 on success, -1 on invalid or unrecognized arguments
+ */
+
 int cli_parse(int argc, char **argv, Command *out) {
     if (argc < 2 || !out) {
         return -1;
     }
 
+    /* zero every field in *out — all ints become 0, all pointers become NULL;
+     * this means has_status, has_priority, subcat_id etc. start in their
+     * "not provided" state */
     memset(out, 0, sizeof(*out));
 
     if (strcmp(argv[1], "list") == 0) {
         out->type = CMD_LIST;
-        out->has_status   = 0;
-        out->has_priority = 0;
 
         /* walk optional flags — same pattern as update */
         for (int i = 2; i < argc; ++i) {
@@ -31,12 +42,6 @@ int cli_parse(int argc, char **argv, Command *out) {
             }
         }
 
-        return 0;
-    }
-
-    if (strcmp(argv[1], "open") == 0) {
-        if (argc != 2) return -1;
-        out->type = CMD_OPEN;
         return 0;
     }
 
@@ -97,13 +102,6 @@ int cli_parse(int argc, char **argv, Command *out) {
         return 0;
     }
 
-    if (strcmp(argv[1], "done") == 0) {
-        if (argc != 3) return -1;
-        if (parse_int(argv[2], &out->id) != 0) return -1;
-        out->type = CMD_DONE;
-        return 0;
-    }
-
     if (strcmp(argv[1], "show") == 0) {
         if (argc != 3) return -1;
         if (parse_int(argv[2], &out->id) != 0) return -1;
@@ -144,17 +142,15 @@ int cli_parse(int argc, char **argv, Command *out) {
 void cli_print_usage(const char *progname) {
     fprintf(stderr,
         "Usage:\n"
-        "  %s list\n"
-        "  %s open\n"
+        "  %s list [--status \"status\"] [--priority \"priority\"]\n"
         "  %s add \"text\" [subcat_id]\n"
         "  %s update <id> [--text \"text\"] [--priority \"priority\"] [--subcat <id>]\n"
         "  %s delete <id>\n"
-        "  %s done <id>\n"
         "  %s show <id>\n"
         "  %s cat list\n"
         "  %s cat add \"name\"\n"
         "  %s subcat list\n"
         "  %s subcat add <cat_id> \"name\"\n",
         progname, progname, progname, progname, progname, progname, progname,
-        progname, progname, progname, progname);
+        progname, progname);
 }

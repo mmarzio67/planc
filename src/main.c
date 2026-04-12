@@ -35,7 +35,11 @@ static void print_item(const PlanItem *item, const CategoryList *cats, const Sub
 }
 
 int main(int argc, char **argv) {
+    /* Parse argv into a typed Command struct — from this point on the code
+     * never reads argv directly, it only acts on what cmd contains. */
     Command cmd = {0};
+    /* cli_parse fills cmd and returns 0 on success, -1 on bad input —
+     * both happen in the same expression before the condition is tested */
     if (cli_parse(argc, argv, &cmd) != 0) {
         cli_print_usage(argv[0]);
         return 1;
@@ -80,13 +84,10 @@ int main(int argc, char **argv) {
     switch (cmd.type) {
         case CMD_LIST:
             for (size_t i = 0; i < list.len; ++i) {
-                print_item(&list.items[i], &cats, &subcats);
-            }
-            break;
-
-        case CMD_OPEN:
-            for (size_t i = 0; i < list.len; ++i) {
-                if (list.items[i].status == PLAN_STATUS_DONE) continue;
+                /* skip item if it does not match the optional --status filter */
+                if (cmd.has_status && list.items[i].status != cmd.status) continue;
+                /* skip item if it does not match the optional --priority filter */
+                if (cmd.has_priority && list.items[i].priority != cmd.priority) continue;
                 print_item(&list.items[i], &cats, &subcats);
             }
             break;

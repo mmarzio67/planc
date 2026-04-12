@@ -4,6 +4,16 @@
 #include "cli.h"
 #include "util.h"
 
+/** Parses command-line arguments into a Command struct.
+ * Bridges argv (raw strings) and main() (typed execution) —
+ * main() never touches argv, it only reads from the filled struct.
+ *
+ * @param argc Argument count
+ * @param argv Argument vector
+ * @param out  Output command structure, filled on success
+ * @return 0 on success, -1 on invalid or unrecognized arguments
+ */
+
 int cli_parse(int argc, char **argv, Command *out) {
     if (argc < 2 || !out) {
         return -1;

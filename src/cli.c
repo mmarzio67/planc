@@ -160,5 +160,5 @@ void cli_print_usage(const char *progname) {
         "  %s subcat list\n"
         "  %s subcat add <cat_id> \"name\"\n",
         progname, progname, progname, progname, progname, progname, progname,
-        progname, progname, progname, progname);
+        progname, progname, progname);
 }

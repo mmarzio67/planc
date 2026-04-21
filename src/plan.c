@@ -155,6 +155,14 @@ int plan_status_from_string(const char *s, PlanStatus *out) {
     return -1;
 }
 
+int plan_subcat_from_string(const char *s, int *out) {
+    char *endptr;
+    long val = strtol(s, &endptr, 10);
+    if (*endptr != '\0' || val < 0) return -1;
+    *out = (int)val;
+    return 0;
+}
+
 
 const char *plan_priority_to_string(PlanPriority priority) {
     switch (priority) {

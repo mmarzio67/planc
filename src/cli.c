@@ -36,7 +36,11 @@ int cli_parse(int argc, char **argv, Command *out) {
             } else if (strcmp(argv[i], "--priority") == 0) {
                 if (i + 1 >= argc) return -1;
                 if (plan_priority_from_string(argv[++i], &out->priority) != 0) return -1;
-                out->has_priority = 1;         
+                out->has_priority = 1;  
+            } else if (strcmp(argv[i], "--subcat") == 0) {
+                if (i + 1 >= argc) return -1;
+                if (parse_int(argv[++i], &out->subcat_id) != 0) return -1;
+                out->has_subcat = 1;        
             } else if (strcmp(argv[i], "--sort-priority") == 0) {    
                 out->sortByPriority = 1;
             } else if (strcmp(argv[i], "--all") == 0) {
@@ -149,7 +153,7 @@ int cli_parse(int argc, char **argv, Command *out) {
 void cli_print_usage(const char *progname) {
     fprintf(stderr,
         "Usage:\n"
-        "  %s list [--status \"status\"] [--priority \"priority\"] --sort-priority [--all]\n"
+        "  %s list [--status \"status\"] [--priority \"priority\"] --sort-priority [--all] [--subcat \"subcat\"] \n"
         "  %s add \"text\" [subcat_id]\n"
         "  %s update <id> [--text \"text\"] [--priority \"priority\"] [--subcat <id>] [--status \"status\"]\n"
         "  %s delete <id>\n"

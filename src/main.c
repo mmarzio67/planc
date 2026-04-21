@@ -105,6 +105,7 @@ int main(int argc, char **argv) {
                     if (list.items[i].status == PLAN_STATUS_ARCHIVED) continue;
                 }
                 if (cmd.has_priority && list.items[i].priority != cmd.priority) continue;
+                if (cmd.has_subcat && list.items[i].subcat_id != cmd.subcat_id) continue;
                 print_item(&list.items[i], &cats, &subcats);
             }
             break;

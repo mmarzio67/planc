@@ -4,10 +4,12 @@
 #include <stddef.h>
 
 typedef enum {
+    
     PLAN_STATUS_OPEN = 0,
     PLAN_STATUS_DONE = 1,
     PLAN_STATUS_WAITING = 2,
-    PLAN_STATUS_ARCHIVED = 3
+    PLAN_STATUS_ARCHIVED = 3,
+    PLAN_STATUS_BORN = 4
 } PlanStatus;
 
 typedef enum {

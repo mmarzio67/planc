@@ -64,7 +64,7 @@ const PlanItem *plan_find_by_id_const(const PlanList *list, int id) {
 int plan_add(PlanList *list, const char *text, const char *timestamp, int category_id, int subcat_id) {
     PlanItem item;
     item.id = plan_next_id(list);
-    item.status = PLAN_STATUS_OPEN;
+    item.status = PLAN_STATUS_BORN;
     item.priority = PRIO_NORMAL;
     memcpy(item.created_at, timestamp, 21);
     item.category_id = category_id;
@@ -132,7 +132,7 @@ const char *plan_status_to_string(PlanStatus status) {
 }
 
 int plan_status_from_string(const char *s, PlanStatus *out) {
-    if (strcmp(s, "born == 0) {
+    if (strcmp(s, "born") == 0) {
         *out = PLAN_STATUS_BORN;
         return 0;
     }

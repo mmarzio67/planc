@@ -122,6 +122,7 @@ int plan_mark_done(PlanList *list, int id) {
 
 const char *plan_status_to_string(PlanStatus status) {
     switch (status) {
+        case PLAN_STATUS_BORN: return "born";
         case PLAN_STATUS_OPEN: return "open";
         case PLAN_STATUS_DONE: return "done";
         case PLAN_STATUS_WAITING: return "waiting";
@@ -131,6 +132,10 @@ const char *plan_status_to_string(PlanStatus status) {
 }
 
 int plan_status_from_string(const char *s, PlanStatus *out) {
+    if (strcmp(s, "born == 0) {
+        *out = PLAN_STATUS_BORN;
+        return 0;
+    }
     if (strcmp(s, "open") == 0) {
         *out = PLAN_STATUS_OPEN;
         return 0;

@@ -36,7 +36,11 @@ int cli_parse(int argc, char **argv, Command *out) {
             } else if (strcmp(argv[i], "--priority") == 0) {
                 if (i + 1 >= argc) return -1;
                 if (plan_priority_from_string(argv[++i], &out->priority) != 0) return -1;
-                out->has_priority = 1;               
+                out->has_priority = 1;
+             } else if (strcmp(argv[i], "--subcat") == 0) {
+                if (i + 1 >= argc) return -1;
+                if (plan_subcat_from_string(argv[++i], &out->subcat_id) != 0) return -1;
+                out->has_subcat = 1;           
             } else if (strcmp(argv[i], "--sort-priority") == 0) {    
                 out->sortByPriority = 1;
             } else if (strcmp(argv[i], "--all") == 0) {

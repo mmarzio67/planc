@@ -3,75 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sqlite3.h>
 
 #include "category.h"
 #include "storage.h"
 #include "util.h"
-
-#define LINE_BUF_SIZE 4096
-
-static int parse_line(char *line, PlanItem *out) {
-    /* parse all possible fields upfront; fields beyond what the line contains
-       will be NULL — we use that to detect which format generation we are reading */
-    char *id_s     = strtok(line, "|");
-    char *status_s = strtok(NULL, "|");
-    char *ts_s     = strtok(NULL, "|");
-    char *field4   = strtok(NULL, "|");  /* gen1: text | gen2+: cat_id   */
-    char *field5   = strtok(NULL, "|");  /* gen2+: subcat_id             */
-    char *field6   = strtok(NULL, "|");  /* gen2: text  | gen3: priority */
-    char *field7   = strtok(NULL, "");   /* gen3: text                   */
-
-    if (!id_s || !status_s || !ts_s || !field4) {
-        return -1;
-    }
-
-    if (parse_int(id_s, &out->id) != 0) {
-        return -1;
-    }
-
-    if (plan_status_from_string(status_s, &out->status) != 0) {
-        return -1;
-    }
-
-    if (strlen(ts_s) != 20) {
-        return -1;
-    }
-
-    memcpy(out->created_at, ts_s, 21);
-
-    if (field5 == NULL) {
-        /* gen1 — 4 fields: id|status|created_at|text
-           no category, no priority — apply defaults */
-        out->category_id = -1;
-        out->subcat_id   = -1;
-        out->priority    = PRIO_NORMAL;
-        rstrip_newline(field4);
-        out->text = xstrdup(field4);
-
-    } else if (field7 == NULL) {
-        /* gen2 — 6 fields: id|status|created_at|cat_id|subcat_id|text
-           has category but no priority — default priority to NORMAL */
-        if (parse_int(field4, &out->category_id) != 0) return -1;
-        if (parse_int(field5, &out->subcat_id)   != 0) return -1;
-        out->priority = PRIO_NORMAL;
-        rstrip_newline(field6);
-        out->text = xstrdup(field6);
-
-    } else {
-        /* gen3 — 7 fields: id|status|created_at|cat_id|subcat_id|priority|text */
-        if (parse_int(field4, &out->category_id)        != 0) return -1;
-        if (parse_int(field5, &out->subcat_id)          != 0) return -1;
-        if (plan_priority_from_string(field6, &out->priority) != 0) return -1;
-        rstrip_newline(field7);
-        out->text = xstrdup(field7);
-    }
-
-    if (!out->text) {
-        return -1;
-    }
-
-    return 0;
-}
 
 /* creates all components of path, like mkdir -p */
 static int mkdirp(const char *path) {
@@ -91,6 +27,43 @@ static int mkdirp(const char *path) {
     return 0;
 }
 
+/* open the SQLite database and create the schema if it does not exist yet;
+ * all three tables live in the same file — items, categories, subcategories */
+static int db_open(const char *path, sqlite3 **db) {
+    if (sqlite3_open(path, db) != SQLITE_OK) {
+        sqlite3_close(*db);
+        return -1;
+    }
+
+    const char *schema =
+        "CREATE TABLE IF NOT EXISTS items ("
+        "  id          INTEGER PRIMARY KEY,"
+        "  status      TEXT    NOT NULL DEFAULT 'open',"
+        "  priority    TEXT    NOT NULL DEFAULT 'normal',"
+        "  created_at  TEXT    NOT NULL,"
+        "  category_id INTEGER NOT NULL DEFAULT -1,"
+        "  subcat_id   INTEGER NOT NULL DEFAULT -1,"
+        "  text        TEXT    NOT NULL"
+        ");"
+        "CREATE TABLE IF NOT EXISTS categories ("
+        "  id   INTEGER PRIMARY KEY,"
+        "  name TEXT NOT NULL"
+        ");"
+        "CREATE TABLE IF NOT EXISTS subcategories ("
+        "  id          INTEGER PRIMARY KEY,"
+        "  category_id INTEGER NOT NULL,"
+        "  name        TEXT    NOT NULL"
+        ");";
+
+    if (sqlite3_exec(*db, schema, NULL, NULL, NULL) != SQLITE_OK) {
+        sqlite3_close(*db);
+        return -1;
+    }
+
+    return 0;
+}
+
+/* both items and categories now live in the same .db file */
 int storage_default_path(char *buf, size_t buf_size) {
     char dir[1024];
 
@@ -107,190 +80,267 @@ int storage_default_path(char *buf, size_t buf_size) {
 
     if (mkdirp(dir) != 0) return -1;
 
-    int n = snprintf(buf, buf_size, "%s/items", dir);
+    int n = snprintf(buf, buf_size, "%s/planc.db", dir);
     if (n < 0 || (size_t)n >= buf_size) return -1;
 
     return 0;
+}
+
+/* categories live in the same database — return the same path */
+int storage_cat_path(char *buf, size_t buf_size) {
+    return storage_default_path(buf, buf_size);
 }
 
 int storage_load(const char *path, PlanList *list) {
-    FILE *fp = fopen(path, "r");
-    if (!fp) {
-        if (errno == ENOENT) {
-            return 0;
-        }
+    sqlite3 *db;
+    if (db_open(path, &db) != 0) return -1;
+
+    sqlite3_stmt *stmt;
+    const char *sql =
+        "SELECT id, status, created_at, category_id, subcat_id, priority, text "
+        "FROM items ORDER BY id";
+
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
         return -1;
     }
 
-    char line[LINE_BUF_SIZE];
-    while (fgets(line, sizeof(line), fp)) {
+    int rc = 0;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
         PlanItem item;
         memset(&item, 0, sizeof(item));
 
-        if (parse_line(line, &item) != 0) {
-            fclose(fp);
-            return -1;
+        /* column 0 — id */
+        item.id = sqlite3_column_int(stmt, 0);
+
+        /* column 1 — status string → enum */
+        const char *status_s = (const char *)sqlite3_column_text(stmt, 1);
+        if (!status_s || plan_status_from_string(status_s, &item.status) != 0) {
+            rc = -1; break;
         }
+
+        /* column 2 — created_at: copy into fixed-size array */
+        const char *ts = (const char *)sqlite3_column_text(stmt, 2);
+        if (!ts || strlen(ts) != 20) { rc = -1; break; }
+        memcpy(item.created_at, ts, 21);
+
+        /* column 3, 4 — category_id and subcat_id (-1 = not assigned) */
+        item.category_id = sqlite3_column_int(stmt, 3);
+        item.subcat_id   = sqlite3_column_int(stmt, 4);
+
+        /* column 5 — priority string → enum */
+        const char *priority_s = (const char *)sqlite3_column_text(stmt, 5);
+        if (!priority_s || plan_priority_from_string(priority_s, &item.priority) != 0) {
+            rc = -1; break;
+        }
+
+        /* column 6 — text: heap-allocated copy, caller owns it */
+        const char *text = (const char *)sqlite3_column_text(stmt, 6);
+        if (!text) { rc = -1; break; }
+        item.text = xstrdup(text);
+        if (!item.text) { rc = -1; break; }
 
         if (plan_list_append(list, item) != 0) {
             free(item.text);
-            fclose(fp);
-            return -1;
+            rc = -1; break;
         }
     }
 
-    fclose(fp);
-    return 0;
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    return rc;
 }
 
 int storage_save(const char *path, const PlanList *list) {
-    char tmp_path[1200];
-    int n = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
-    if (n < 0 || (size_t)n >= sizeof(tmp_path)) {
-        return -1;
+    sqlite3 *db;
+    if (db_open(path, &db) != 0) return -1;
+
+    /* transaction: either all rows are written or none — same guarantee
+     * as the old tmp+rename trick but handled by SQLite natively */
+    if (sqlite3_exec(db, "BEGIN TRANSACTION", NULL, NULL, NULL) != SQLITE_OK) {
+        sqlite3_close(db); return -1;
     }
 
-    FILE *fp = fopen(tmp_path, "w");
-    if (!fp) return -1;
+    if (sqlite3_exec(db, "DELETE FROM items", NULL, NULL, NULL) != SQLITE_OK) {
+        sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+        sqlite3_close(db); return -1;
+    }
+
+    sqlite3_stmt *stmt;
+    const char *sql =
+        "INSERT INTO items "
+        "(id, status, created_at, category_id, subcat_id, priority, text) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)";
+
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+        sqlite3_close(db); return -1;
+    }
 
     for (size_t i = 0; i < list->len; ++i) {
         const PlanItem *item = &list->items[i];
-        if (fprintf(fp, "%d|%s|%s|%d|%d|%s|%s\n",
-                    item->id,
-                    plan_status_to_string(item->status),
-                    item->created_at,
-                    item->category_id,
-                    item->subcat_id,
-                    plan_priority_to_string(item->priority),
-                    item->text) < 0) {
-            fclose(fp);
-            return -1;
+
+        /* bind each ? placeholder in order — type must match exactly */
+        sqlite3_bind_int (stmt, 1, item->id);
+        sqlite3_bind_text(stmt, 2, plan_status_to_string(item->status),    -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, item->created_at,                       -1, SQLITE_STATIC);
+        sqlite3_bind_int (stmt, 4, item->category_id);
+        sqlite3_bind_int (stmt, 5, item->subcat_id);
+        sqlite3_bind_text(stmt, 6, plan_priority_to_string(item->priority), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 7, item->text,                             -1, SQLITE_STATIC);
+
+        if (sqlite3_step(stmt) != SQLITE_DONE) {
+            sqlite3_finalize(stmt);
+            sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+            sqlite3_close(db); return -1;
         }
+
+        /* reset the statement so it can be reused for the next row */
+        sqlite3_reset(stmt);
+        sqlite3_clear_bindings(stmt);
     }
 
-    if (fclose(fp) != 0) {
-        return -1;
+    sqlite3_finalize(stmt);
+
+    if (sqlite3_exec(db, "COMMIT", NULL, NULL, NULL) != SQLITE_OK) {
+        sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+        sqlite3_close(db); return -1;
     }
 
-    if (rename(tmp_path, path) != 0) {
-        remove(tmp_path);
-        return -1;
-    }
-
-    return 0;
-}
-
-int storage_cat_path(char *buf, size_t buf_size) {
-    char dir[1024];
-
-    const char *xdg = getenv("XDG_DATA_HOME");
-    if (xdg) {
-        int n = snprintf(dir, sizeof(dir), "%s/plan", xdg);
-        if (n < 0 || (size_t)n >= sizeof(dir)) return -1;
-    } else {
-        const char *home = getenv("HOME");
-        if (!home) return -1;
-        int n = snprintf(dir, sizeof(dir), "%s/.local/share/plan", home);
-        if (n < 0 || (size_t)n >= sizeof(dir)) return -1;
-    }
-
-    if (mkdirp(dir) != 0) return -1;
-
-    int n = snprintf(buf, buf_size, "%s/categories", dir);
-    if (n < 0 || (size_t)n >= buf_size) return -1;
-
+    sqlite3_close(db);
     return 0;
 }
 
 int storage_cat_load(const char *path, CategoryList *cats, SubcategoryList *subcats) {
-    FILE *fp = fopen(path, "r");
-    if (!fp) {
-        if (errno == ENOENT) return 0;
-        return -1;
+    sqlite3 *db;
+    if (db_open(path, &db) != 0) return -1;
+
+    sqlite3_stmt *stmt;
+    int rc = 0;
+
+    /* load categories first */
+    if (sqlite3_prepare_v2(db,
+            "SELECT id, name FROM categories ORDER BY id",
+            -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_close(db); return -1;
     }
 
-    char line[LINE_BUF_SIZE];
-    while (fgets(line, sizeof(line), fp)) {
-        rstrip_newline(line);
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        Category cat;
+        cat.id = sqlite3_column_int(stmt, 0);
+        const char *name = (const char *)sqlite3_column_text(stmt, 1);
+        if (!name) { rc = -1; break; }
+        cat.name = xstrdup(name);
+        if (!cat.name) { rc = -1; break; }
 
-        char *type_s = strtok(line, "|");
-        if (!type_s) continue;
-
-        if (type_s[0] == 'C') {
-            char *id_s   = strtok(NULL, "|");
-            char *name_s = strtok(NULL, "");
-            if (!id_s || !name_s) { fclose(fp); return -1; }
-
-            Category cat;
-            if (parse_int(id_s, &cat.id) != 0) { fclose(fp); return -1; }
-            cat.name = xstrdup(name_s);
-            if (!cat.name) { fclose(fp); return -1; }
-
-            if (cats->len == cats->cap) {
-                size_t new_cap = (cats->cap == 0) ? 8 : cats->cap * 2;
-                Category *tmp = realloc(cats->items, new_cap * sizeof(*tmp));
-                if (!tmp) { free(cat.name); fclose(fp); return -1; }
-                cats->items = tmp;
-                cats->cap = new_cap;
-            }
-            cats->items[cats->len++] = cat;
-
-        } else if (type_s[0] == 'S') {
-            char *id_s     = strtok(NULL, "|");
-            char *cat_id_s = strtok(NULL, "|");
-            char *name_s   = strtok(NULL, "");
-            if (!id_s || !cat_id_s || !name_s) { fclose(fp); return -1; }
-
-            Subcategory sub;
-            if (parse_int(id_s, &sub.id) != 0)         { fclose(fp); return -1; }
-            if (parse_int(cat_id_s, &sub.category_id) != 0) { fclose(fp); return -1; }
-            sub.name = xstrdup(name_s);
-            if (!sub.name) { fclose(fp); return -1; }
-
-            if (subcats->len == subcats->cap) {
-                size_t new_cap = (subcats->cap == 0) ? 8 : subcats->cap * 2;
-                Subcategory *tmp = realloc(subcats->items, new_cap * sizeof(*tmp));
-                if (!tmp) { free(sub.name); fclose(fp); return -1; }
-                subcats->items = tmp;
-                subcats->cap = new_cap;
-            }
-            subcats->items[subcats->len++] = sub;
+        if (cats->len == cats->cap) {
+            size_t new_cap = (cats->cap == 0) ? 8 : cats->cap * 2;
+            Category *tmp = realloc(cats->items, new_cap * sizeof(*tmp));
+            if (!tmp) { free(cat.name); rc = -1; break; }
+            cats->items = tmp;
+            cats->cap   = new_cap;
         }
+        cats->items[cats->len++] = cat;
+    }
+    sqlite3_finalize(stmt);
+    if (rc != 0) { sqlite3_close(db); return rc; }
+
+    /* then load subcategories */
+    if (sqlite3_prepare_v2(db,
+            "SELECT id, category_id, name FROM subcategories ORDER BY id",
+            -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_close(db); return -1;
     }
 
-    fclose(fp);
-    return 0;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        Subcategory sub;
+        sub.id          = sqlite3_column_int(stmt, 0);
+        sub.category_id = sqlite3_column_int(stmt, 1);
+        const char *name = (const char *)sqlite3_column_text(stmt, 2);
+        if (!name) { rc = -1; break; }
+        sub.name = xstrdup(name);
+        if (!sub.name) { rc = -1; break; }
+
+        if (subcats->len == subcats->cap) {
+            size_t new_cap = (subcats->cap == 0) ? 8 : subcats->cap * 2;
+            Subcategory *tmp = realloc(subcats->items, new_cap * sizeof(*tmp));
+            if (!tmp) { free(sub.name); rc = -1; break; }
+            subcats->items = tmp;
+            subcats->cap   = new_cap;
+        }
+        subcats->items[subcats->len++] = sub;
+    }
+
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    return rc;
 }
 
 int storage_cat_save(const char *path, const CategoryList *cats, const SubcategoryList *subcats) {
-    char tmp_path[1200];
-    int n = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
-    if (n < 0 || (size_t)n >= sizeof(tmp_path)) return -1;
+    sqlite3 *db;
+    if (db_open(path, &db) != 0) return -1;
 
-    FILE *fp = fopen(tmp_path, "w");
-    if (!fp) return -1;
+    if (sqlite3_exec(db, "BEGIN TRANSACTION", NULL, NULL, NULL) != SQLITE_OK) {
+        sqlite3_close(db); return -1;
+    }
+
+    /* delete and reinsert both tables atomically */
+    if (sqlite3_exec(db, "DELETE FROM categories",   NULL, NULL, NULL) != SQLITE_OK ||
+        sqlite3_exec(db, "DELETE FROM subcategories", NULL, NULL, NULL) != SQLITE_OK) {
+        sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+        sqlite3_close(db); return -1;
+    }
+
+    sqlite3_stmt *stmt;
+
+    /* insert categories */
+    if (sqlite3_prepare_v2(db,
+            "INSERT INTO categories (id, name) VALUES (?, ?)",
+            -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+        sqlite3_close(db); return -1;
+    }
 
     for (size_t i = 0; i < cats->len; ++i) {
-        if (fprintf(fp, "C|%d|%s\n", cats->items[i].id, cats->items[i].name) < 0) {
-            fclose(fp); return -1;
+        sqlite3_bind_int (stmt, 1, cats->items[i].id);
+        sqlite3_bind_text(stmt, 2, cats->items[i].name, -1, SQLITE_STATIC);
+        if (sqlite3_step(stmt) != SQLITE_DONE) {
+            sqlite3_finalize(stmt);
+            sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+            sqlite3_close(db); return -1;
         }
+        sqlite3_reset(stmt);
+        sqlite3_clear_bindings(stmt);
+    }
+    sqlite3_finalize(stmt);
+
+    /* insert subcategories */
+    if (sqlite3_prepare_v2(db,
+            "INSERT INTO subcategories (id, category_id, name) VALUES (?, ?, ?)",
+            -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+        sqlite3_close(db); return -1;
     }
 
     for (size_t i = 0; i < subcats->len; ++i) {
-        if (fprintf(fp, "S|%d|%d|%s\n",
-                    subcats->items[i].id,
-                    subcats->items[i].category_id,
-                    subcats->items[i].name) < 0) {
-            fclose(fp); return -1;
+        sqlite3_bind_int (stmt, 1, subcats->items[i].id);
+        sqlite3_bind_int (stmt, 2, subcats->items[i].category_id);
+        sqlite3_bind_text(stmt, 3, subcats->items[i].name, -1, SQLITE_STATIC);
+        if (sqlite3_step(stmt) != SQLITE_DONE) {
+            sqlite3_finalize(stmt);
+            sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+            sqlite3_close(db); return -1;
         }
+        sqlite3_reset(stmt);
+        sqlite3_clear_bindings(stmt);
+    }
+    sqlite3_finalize(stmt);
+
+    if (sqlite3_exec(db, "COMMIT", NULL, NULL, NULL) != SQLITE_OK) {
+        sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+        sqlite3_close(db); return -1;
     }
 
-    if (fclose(fp) != 0) return -1;
-
-    if (rename(tmp_path, path) != 0) {
-        remove(tmp_path);
-        return -1;
-    }
-
+    sqlite3_close(db);
     return 0;
 }

@@ -1,0 +1,27 @@
+services:
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      # override in .env or shell — never commit a real secret
+      PLANC_JWT_SECRET: ${PLANC_JWT_SECRET:-change-me-in-production}
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      # reaches the backend via the internal Docker network, not localhost
+      PLANC_API_URL: http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped

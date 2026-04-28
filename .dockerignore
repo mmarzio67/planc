@@ -1,0 +1,16 @@
+# build artifacts
+*.o
+*.so
+plan
+migrate
+
+# Python
+__pycache__/
+*.pyc
+*/.venv/
+*/venv/
+
+# editor / OS
+.git/
+.vscode/
+*.swp

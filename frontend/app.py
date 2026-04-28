@@ -105,6 +105,12 @@ def show_main() -> None:
     status_filter   = None if status_sel   == "(all)" else status_sel
     priority_filter = None if priority_sel == "(all)" else priority_sel
 
+    # version counters — incrementing a counter changes the form key, which
+    # forces Streamlit to render a brand-new widget with empty fields
+    for _k in ("_ver_add_item", "_ver_add_cat", "_ver_add_subcat"):
+        if _k not in st.session_state:
+            st.session_state[_k] = 0
+
     st.title("planc")
 
     # load all data upfront — one API call each, then work from the local dicts
@@ -120,7 +126,7 @@ def show_main() -> None:
 
     # ── add item ─────────────────────────────────────────────────────────────
     with st.expander("Add item"):
-        with st.form("add_item"):
+        with st.form(f"add_item_{st.session_state['_ver_add_item']}"):
             text       = st.text_input("Text")
             subcat_sel = st.selectbox("Subcategory", subcat_labels)
             if st.form_submit_button("Add"):
@@ -131,7 +137,7 @@ def show_main() -> None:
                                          else subcat_id_map[subcat_sel])
                     try:
                         new_id = api.add_item(token, text.strip(), cat_id, subcat_id)
-                        st.success(f"Added [{new_id}]")
+                        st.session_state["_ver_add_item"] += 1
                         st.rerun()
                     except PlanCError as e:
                         st.error(str(e))
@@ -212,12 +218,12 @@ def show_main() -> None:
             st.subheader("Categories")
             for c in cats_data.get("categories", []):
                 st.write(f"[{c['id']}] {c['name']}")
-            with st.form("add_cat"):
+            with st.form(f"add_cat_{st.session_state['_ver_add_cat']}"):
                 cat_name = st.text_input("Name")
                 if st.form_submit_button("Add category"):
                     try:
                         new_id = api.add_category(token, cat_name.strip())
-                        st.success(f"Added [{new_id}]")
+                        st.session_state["_ver_add_cat"] += 1
                         st.rerun()
                     except PlanCError as e:
                         st.error(str(e))
@@ -231,7 +237,7 @@ def show_main() -> None:
 
             cats = cats_data.get("categories", [])
             if cats:
-                with st.form("add_subcat"):
+                with st.form(f"add_subcat_{st.session_state['_ver_add_subcat']}"):
                     cat_choices = {f"[{c['id']}] {c['name']}": c["id"] for c in cats}
                     parent_sel  = st.selectbox("Parent category", list(cat_choices))
                     sub_name    = st.text_input("Name")
@@ -239,7 +245,7 @@ def show_main() -> None:
                         try:
                             new_id = api.add_subcategory(
                                 token, cat_choices[parent_sel], sub_name.strip())
-                            st.success(f"Added [{new_id}]")
+                            st.session_state["_ver_add_subcat"] += 1
                             st.rerun()
                         except PlanCError as e:
                             st.error(str(e))

@@ -12,3 +12,6 @@ Makefile
 .vscode/
 *.log
 .DS_Store
+
+# runtime data — keep the directory, ignore the database files
+data/*.db

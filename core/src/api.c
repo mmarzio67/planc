@@ -6,63 +6,8 @@
 #include "plan.h"
 #include "planc_api.h"
 #include "storage.h"
+#include "strbuf.h"
 #include "util.h"
-
-/* -----------------------------------------------------------------------
- * Minimal dynamic string buffer — grows on demand, used to build JSON
- * without depending on any external JSON library.
- * ----------------------------------------------------------------------- */
-typedef struct {
-    char  *buf;
-    size_t len;
-    size_t cap;
-} Strbuf;
-
-static int sb_init(Strbuf *sb) {
-    sb->buf = malloc(256);
-    if (!sb->buf) return -1;
-    sb->buf[0] = '\0';
-    sb->len    = 0;
-    sb->cap    = 256;
-    return 0;
-}
-
-static int sb_append(Strbuf *sb, const char *s) {
-    size_t slen = strlen(s);
-    while (sb->len + slen + 1 > sb->cap) {
-        size_t nc  = sb->cap * 2;
-        char  *tmp = realloc(sb->buf, nc);
-        if (!tmp) return -1;
-        sb->buf = tmp;
-        sb->cap = nc;
-    }
-    memcpy(sb->buf + sb->len, s, slen + 1);
-    sb->len += slen;
-    return 0;
-}
-
-static int sb_append_int(Strbuf *sb, int n) {
-    char tmp[32];
-    snprintf(tmp, sizeof(tmp), "%d", n);
-    return sb_append(sb, tmp);
-}
-
-/* Quote and escape a string for JSON — handles " and \ */
-static int sb_append_json_str(Strbuf *sb, const char *s) {
-    if (sb_append(sb, "\"") != 0) return -1;
-    for (; *s; ++s) {
-        char tmp[3] = {'\0', '\0', '\0'};
-        if (*s == '"' || *s == '\\') {
-            tmp[0] = '\\'; tmp[1] = *s;
-        } else {
-            tmp[0] = *s;
-        }
-        if (sb_append(sb, tmp) != 0) return -1;
-    }
-    return sb_append(sb, "\"");
-}
-
-/* ----------------------------------------------------------------------- */
 
 static int item_to_json(Strbuf *sb, const PlanItem *item) {
     if (sb_append(sb, "{\"id\":") != 0)                                     return -1;

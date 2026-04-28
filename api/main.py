@@ -183,6 +183,40 @@ def add_subcategory(body: NewSubcategory,
     return {"id": new_id}
 
 
+# ─── time tracking routes ────────────────────────────────────────────────────
+
+@app.post("/items/{item_id}/start", status_code=status.HTTP_204_NO_CONTENT)
+def start_timer(item_id: int, _: Annotated[dict, Depends(current_user)]):
+    try:
+        planc.time_start(item_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+
+@app.post("/items/{item_id}/stop", status_code=status.HTTP_204_NO_CONTENT)
+def stop_timer(item_id: int, _: Annotated[dict, Depends(current_user)]):
+    try:
+        planc.time_stop(item_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+
+@app.get("/timesheet/active")
+def get_active(_: Annotated[dict, Depends(current_user)]):
+    try:
+        return planc.time_active()
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/timesheet/totals")
+def get_totals(_: Annotated[dict, Depends(current_user)]):
+    try:
+        return planc.time_totals()
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ─── health ───────────────────────────────────────────────────────────────────
 
 @app.get("/health")

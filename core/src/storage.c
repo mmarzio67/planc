@@ -27,9 +27,8 @@ static int mkdirp(const char *path) {
     return 0;
 }
 
-/* open the SQLite database and create the schema if it does not exist yet;
- * all three tables live in the same file — items, categories, subcategories */
-static int db_open(const char *path, sqlite3 **db) {
+/* Open the database and create the full schema if it does not exist yet. */
+int storage_db_open(const char *path, sqlite3 **db) {
     if (sqlite3_open(path, db) != SQLITE_OK) {
         sqlite3_close(*db);
         return -1;
@@ -53,6 +52,12 @@ static int db_open(const char *path, sqlite3 **db) {
         "  id          INTEGER PRIMARY KEY,"
         "  category_id INTEGER NOT NULL,"
         "  name        TEXT    NOT NULL"
+        ");"
+        "CREATE TABLE IF NOT EXISTS timesheet ("
+        "  id          INTEGER PRIMARY KEY,"
+        "  task_id     INTEGER NOT NULL,"
+        "  started_at  TEXT    NOT NULL,"
+        "  stopped_at  TEXT"
         ");";
 
     if (sqlite3_exec(*db, schema, NULL, NULL, NULL) != SQLITE_OK) {
@@ -93,7 +98,7 @@ int storage_cat_path(char *buf, size_t buf_size) {
 
 int storage_load(const char *path, PlanList *list) {
     sqlite3 *db;
-    if (db_open(path, &db) != 0) return -1;
+    if (storage_db_open(path, &db) != 0) return -1;
 
     sqlite3_stmt *stmt;
     const char *sql =
@@ -153,7 +158,7 @@ int storage_load(const char *path, PlanList *list) {
 
 int storage_save(const char *path, const PlanList *list) {
     sqlite3 *db;
-    if (db_open(path, &db) != 0) return -1;
+    if (storage_db_open(path, &db) != 0) return -1;
 
     /* transaction: either all rows are written or none — same guarantee
      * as the old tmp+rename trick but handled by SQLite natively */
@@ -213,7 +218,7 @@ int storage_save(const char *path, const PlanList *list) {
 
 int storage_cat_load(const char *path, CategoryList *cats, SubcategoryList *subcats) {
     sqlite3 *db;
-    if (db_open(path, &db) != 0) return -1;
+    if (storage_db_open(path, &db) != 0) return -1;
 
     sqlite3_stmt *stmt;
     int rc = 0;
@@ -278,7 +283,7 @@ int storage_cat_load(const char *path, CategoryList *cats, SubcategoryList *subc
 
 int storage_cat_save(const char *path, const CategoryList *cats, const SubcategoryList *subcats) {
     sqlite3 *db;
-    if (db_open(path, &db) != 0) return -1;
+    if (storage_db_open(path, &db) != 0) return -1;
 
     if (sqlite3_exec(db, "BEGIN TRANSACTION", NULL, NULL, NULL) != SQLITE_OK) {
         sqlite3_close(db); return -1;

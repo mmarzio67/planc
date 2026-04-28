@@ -103,3 +103,27 @@ def add_subcategory(token: str, cat_id: int, name: str) -> int:
                       json={"cat_id": cat_id, "name": name}, headers=_h(token))
     _raise(r)
     return r.json()["id"]
+
+
+# ─── time tracking ─────────────────────────────────────────────────────────
+
+def time_start(token: str, task_id: int) -> None:
+    r = requests.post(f"{BASE_URL}/items/{task_id}/start", headers=_h(token))
+    _raise(r)
+
+
+def time_stop(token: str, task_id: int) -> None:
+    r = requests.post(f"{BASE_URL}/items/{task_id}/stop", headers=_h(token))
+    _raise(r)
+
+
+def time_active(token: str) -> dict:
+    r = requests.get(f"{BASE_URL}/timesheet/active", headers=_h(token))
+    _raise(r)
+    return r.json()
+
+
+def time_totals(token: str) -> list[dict]:
+    r = requests.get(f"{BASE_URL}/timesheet/totals", headers=_h(token))
+    _raise(r)
+    return r.json()

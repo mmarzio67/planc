@@ -44,7 +44,14 @@ def _build_subcat_options(cats_data: dict) -> tuple[list[str], dict[str, tuple[i
     return labels, id_map
 
 
-def _item_header(item: dict, cats_data: dict) -> str:
+def _fmt_duration(seconds: int) -> str:
+    if seconds < 60:
+        return "< 1m"
+    h, m = divmod(seconds // 60, 60)
+    return f"{h}h {m:02d}m" if h else f"{m}m"
+
+
+def _item_header(item: dict, cats_data: dict, totals_map: dict) -> str:
     cat_names = {c["id"]: c["name"] for c in cats_data.get("categories", [])}
     sub_names = {s["id"]: s["name"] for s in cats_data.get("subcategories", [])}
 
@@ -55,8 +62,14 @@ def _item_header(item: dict, cats_data: dict) -> str:
             cat_part += f" / {sub_names.get(item['subcat_id'], '?')}"
         cat_part = f"  _{cat_part}_"
 
+    time_part = ""
+    timing = totals_map.get(item["id"])
+    if timing and timing["total_seconds"] > 0:
+        label = _fmt_duration(timing["total_seconds"])
+        time_part = f"  [RUNNING {label}]" if timing["is_running"] else f"  [{label}]"
+
     return (f"[{item['id']}] **{item['text']}**"
-            f"  `{item['status']}` `{item['priority']}`{cat_part}")
+            f"  `{item['status']}` `{item['priority']}`{cat_part}{time_part}")
 
 
 # ─── login page ──────────────────────────────────────────────────────────────
@@ -118,9 +131,13 @@ def show_main() -> None:
         items     = api.list_items(token, show_all=show_all,
                                    status=status_filter, priority=priority_filter)
         cats_data = api.get_categories(token)
+        active_info = api.time_active(token)   # {} or {"task_id":N,"started_at":"..."}
+        totals_map  = {t["task_id"]: t for t in api.time_totals(token)}
     except PlanCError as e:
         st.error(f"Could not load data: {e}")
         return
+
+    active_id = active_info.get("task_id")
 
     subcat_labels, subcat_id_map = _build_subcat_options(cats_data)
 
@@ -149,10 +166,14 @@ def show_main() -> None:
         st.info("No items match the current filters.")
     else:
         for item in items:
-            with st.expander(_item_header(item, cats_data), expanded=False):
+            timing     = totals_map.get(item["id"], {"total_seconds": 0, "is_running": 0})
+            is_running = bool(timing["is_running"])
+            other_running = active_id is not None and active_id != item["id"]
+
+            with st.expander(_item_header(item, cats_data, totals_map), expanded=False):
                 st.caption(f"created: {item['created_at']}")
 
-                col_done, col_del, _ = st.columns([1, 1, 6])
+                col_done, col_del, col_time, _ = st.columns([1, 1, 1, 5])
                 with col_done:
                     if item["status"] != "done":
                         if st.button("Mark done", key=f"done_{item['id']}"):
@@ -168,6 +189,23 @@ def show_main() -> None:
                             st.rerun()
                         except PlanCError as e:
                             st.error(str(e))
+                with col_time:
+                    if is_running:
+                        if st.button("Stop", key=f"stop_{item['id']}"):
+                            try:
+                                api.time_stop(token, item["id"])
+                                st.rerun()
+                            except PlanCError as e:
+                                st.error(str(e))
+                    else:
+                        if st.button("Start", key=f"start_{item['id']}",
+                                     disabled=other_running,
+                                     help=f"Task {active_id} is running" if other_running else None):
+                            try:
+                                api.time_start(token, item["id"])
+                                st.rerun()
+                            except PlanCError as e:
+                                st.error(str(e))
 
                 # inline edit form — unique key per item
                 with st.form(f"edit_{item['id']}"):

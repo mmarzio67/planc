@@ -173,3 +173,46 @@ def add_subcategory(cat_id: int, name: str) -> int:
     if result < 0:
         raise RuntimeError(err.value.decode())
     return result
+
+
+# ── time tracking ─────────────────────────────────────────────────────────────
+
+_lib.planc_time_start.restype  = ctypes.c_int
+_lib.planc_time_start.argtypes = [ctypes.c_char_p, ctypes.c_int,
+                                   ctypes.c_char_p, ctypes.c_size_t]
+
+_lib.planc_time_stop.restype  = ctypes.c_int
+_lib.planc_time_stop.argtypes = [ctypes.c_char_p, ctypes.c_int,
+                                  ctypes.c_char_p, ctypes.c_size_t]
+
+_lib.planc_time_active.restype  = ctypes.c_void_p
+_lib.planc_time_active.argtypes = [ctypes.c_char_p]
+
+_lib.planc_time_totals.restype  = ctypes.c_void_p
+_lib.planc_time_totals.argtypes = [ctypes.c_char_p]
+
+
+def time_start(task_id: int) -> None:
+    err = ctypes.create_string_buffer(256)
+    if _lib.planc_time_start(_db_path(), task_id, err, 256) != 0:
+        raise RuntimeError(err.value.decode())
+
+
+def time_stop(task_id: int) -> None:
+    err = ctypes.create_string_buffer(256)
+    if _lib.planc_time_stop(_db_path(), task_id, err, 256) != 0:
+        raise RuntimeError(err.value.decode())
+
+
+def time_active() -> dict:
+    ptr = _lib.planc_time_active(_db_path())
+    if ptr is None:
+        raise RuntimeError("planc_time_active returned NULL")
+    return json.loads(_read_and_free(ptr))
+
+
+def time_totals() -> list[dict]:
+    ptr = _lib.planc_time_totals(_db_path())
+    if ptr is None:
+        raise RuntimeError("planc_time_totals returned NULL")
+    return json.loads(_read_and_free(ptr))

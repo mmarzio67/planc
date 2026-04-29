@@ -37,6 +37,13 @@ def login(username: str, password: str) -> str:
     return r.json()["access_token"]
 
 
+def get_me(token: str) -> dict:
+    """Return {"username": ..., "role": ...} for the authenticated user."""
+    r = requests.get(f"{BASE_URL}/auth/users/me", headers=_h(token))
+    _raise(r)
+    return r.json()
+
+
 def change_password(token: str, new_password: str) -> None:
     r = requests.put(f"{BASE_URL}/auth/users/me/password",
                      json={"new_password": new_password}, headers=_h(token))
@@ -48,7 +55,9 @@ def change_password(token: str, new_password: str) -> None:
 def list_items(token: str,
                show_all: bool = False,
                status: str | None = None,
-               priority: str | None = None) -> list[dict]:
+               priority: str | None = None,
+               cat_id: int | None = None,
+               subcat_id: int | None = None) -> list[dict]:
     params: dict = {}
     if show_all:
         params["show_all"] = "true"
@@ -56,6 +65,10 @@ def list_items(token: str,
         params["status"] = status
     if priority:
         params["priority"] = priority
+    if cat_id is not None:
+        params["cat_id"] = cat_id
+    if subcat_id is not None:
+        params["subcat_id"] = subcat_id
     r = requests.get(f"{BASE_URL}/items", params=params, headers=_h(token))
     _raise(r)
     return r.json()
@@ -107,13 +120,15 @@ def add_subcategory(token: str, cat_id: int, name: str) -> int:
 
 # ─── time tracking ─────────────────────────────────────────────────────────
 
-def time_start(token: str, task_id: int) -> None:
-    r = requests.post(f"{BASE_URL}/items/{task_id}/start", headers=_h(token))
+def time_start(token: str, task_id: int, notes: str = "") -> None:
+    r = requests.post(f"{BASE_URL}/items/{task_id}/start",
+                      json={"notes": notes}, headers=_h(token))
     _raise(r)
 
 
-def time_stop(token: str, task_id: int) -> None:
-    r = requests.post(f"{BASE_URL}/items/{task_id}/stop", headers=_h(token))
+def time_stop(token: str, task_id: int, notes: str = "") -> None:
+    r = requests.post(f"{BASE_URL}/items/{task_id}/stop",
+                      json={"notes": notes}, headers=_h(token))
     _raise(r)
 
 
@@ -125,5 +140,30 @@ def time_active(token: str) -> dict:
 
 def time_totals(token: str) -> list[dict]:
     r = requests.get(f"{BASE_URL}/timesheet/totals", headers=_h(token))
+    _raise(r)
+    return r.json()
+
+
+def update_session(token: str, session_id: int,
+                   started_at: str,
+                   stopped_at: str | None,
+                   notes: str) -> None:
+    r = requests.put(f"{BASE_URL}/timesheet/{session_id}",
+                     json={"started_at": started_at,
+                           "stopped_at": stopped_at,
+                           "notes": notes},
+                     headers=_h(token))
+    _raise(r)
+
+
+def time_report(token: str,
+                date_from: str | None = None,
+                date_to:   str | None = None) -> list[dict]:
+    params: dict = {}
+    if date_from:
+        params["date_from"] = date_from
+    if date_to:
+        params["date_to"] = date_to
+    r = requests.get(f"{BASE_URL}/timesheet/report", params=params, headers=_h(token))
     _raise(r)
     return r.json()

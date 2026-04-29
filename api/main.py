@@ -81,6 +81,11 @@ class PasswordChange(BaseModel):
     new_password: str
 
 
+@app.get("/auth/users/me")
+def get_me(user: Annotated[dict, Depends(current_user)]):
+    return {"username": user["sub"], "role": user.get("role", "user")}
+
+
 @app.put("/auth/users/me/password", status_code=status.HTTP_204_NO_CONTENT)
 def change_password(body: PasswordChange,
                     user: Annotated[dict, Depends(current_user)]):
@@ -93,9 +98,12 @@ def change_password(body: PasswordChange,
 def list_items(show_all:  bool        = False,
                status:    str | None  = None,
                priority:  str | None  = None,
+               cat_id:    int | None  = None,
+               subcat_id: int | None  = None,
                _:         Annotated[dict, Depends(current_user)] = None):
     try:
-        return planc.list_items(show_all=show_all, status=status, priority=priority)
+        return planc.list_items(show_all=show_all, status=status, priority=priority,
+                                cat_id=cat_id, subcat_id=subcat_id)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -185,18 +193,24 @@ def add_subcategory(body: NewSubcategory,
 
 # ─── time tracking routes ────────────────────────────────────────────────────
 
+class TimerNotes(BaseModel):
+    notes: str = ""
+
+
 @app.post("/items/{item_id}/start", status_code=status.HTTP_204_NO_CONTENT)
-def start_timer(item_id: int, _: Annotated[dict, Depends(current_user)]):
+def start_timer(item_id: int, body: TimerNotes,
+                _: Annotated[dict, Depends(current_user)]):
     try:
-        planc.time_start(item_id)
+        planc.time_start(item_id, body.notes)
     except RuntimeError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
 
 @app.post("/items/{item_id}/stop", status_code=status.HTTP_204_NO_CONTENT)
-def stop_timer(item_id: int, _: Annotated[dict, Depends(current_user)]):
+def stop_timer(item_id: int, body: TimerNotes,
+               _: Annotated[dict, Depends(current_user)]):
     try:
-        planc.time_stop(item_id)
+        planc.time_stop(item_id, body.notes)
     except RuntimeError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
@@ -215,6 +229,32 @@ def get_totals(_: Annotated[dict, Depends(current_user)]):
         return planc.time_totals()
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/timesheet/report")
+def get_report(date_from: str | None = None,
+               date_to:   str | None = None,
+               _: Annotated[dict, Depends(admin_user)] = None):
+    try:
+        return planc.time_report(date_from=date_from, date_to=date_to)
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class UpdateSession(BaseModel):
+    started_at: str
+    stopped_at: str | None = None
+    notes:      str = ""
+
+
+@app.put("/timesheet/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def update_session(session_id: int, body: UpdateSession,
+                   _: Annotated[dict, Depends(admin_user)]):
+    try:
+        planc.time_update_session(session_id,
+                                  body.started_at, body.stopped_at, body.notes)
+    except RuntimeError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 # ─── health ───────────────────────────────────────────────────────────────────

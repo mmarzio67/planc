@@ -22,9 +22,13 @@ _lib.planc_list.argtypes = [
     ctypes.c_char_p,  # db_path
     ctypes.c_int,     # show_all
     ctypes.c_int,     # has_status
-    ctypes.c_char_p,  # status_s  (may be NULL)
+    ctypes.c_char_p,  # status_s    (may be NULL)
     ctypes.c_int,     # has_priority
-    ctypes.c_char_p,  # priority_s (may be NULL)
+    ctypes.c_char_p,  # priority_s  (may be NULL)
+    ctypes.c_int,     # has_cat_id
+    ctypes.c_int,     # cat_id
+    ctypes.c_int,     # has_subcat_id
+    ctypes.c_int,     # subcat_id
 ]
 
 _lib.planc_add.restype  = ctypes.c_int
@@ -105,12 +109,16 @@ def _read_and_free(ptr: int) -> str:
 
 def list_items(show_all: bool = False,
                status: str | None = None,
-               priority: str | None = None) -> list[dict]:
+               priority: str | None = None,
+               cat_id: int | None = None,
+               subcat_id: int | None = None) -> list[dict]:
     ptr = _lib.planc_list(
         _db_path(),
         int(show_all),
-        int(status is not None),   status.encode()   if status   else None,
-        int(priority is not None), priority.encode() if priority else None,
+        int(status is not None),    status.encode()   if status   else None,
+        int(priority is not None),  priority.encode() if priority else None,
+        int(cat_id is not None),    cat_id    if cat_id    is not None else 0,
+        int(subcat_id is not None), subcat_id if subcat_id is not None else 0,
     )
     if ptr is None:
         raise RuntimeError("planc_list returned NULL")
@@ -179,10 +187,12 @@ def add_subcategory(cat_id: int, name: str) -> int:
 
 _lib.planc_time_start.restype  = ctypes.c_int
 _lib.planc_time_start.argtypes = [ctypes.c_char_p, ctypes.c_int,
+                                   ctypes.c_char_p,   # notes
                                    ctypes.c_char_p, ctypes.c_size_t]
 
 _lib.planc_time_stop.restype  = ctypes.c_int
 _lib.planc_time_stop.argtypes = [ctypes.c_char_p, ctypes.c_int,
+                                  ctypes.c_char_p,   # notes
                                   ctypes.c_char_p, ctypes.c_size_t]
 
 _lib.planc_time_active.restype  = ctypes.c_void_p
@@ -191,16 +201,36 @@ _lib.planc_time_active.argtypes = [ctypes.c_char_p]
 _lib.planc_time_totals.restype  = ctypes.c_void_p
 _lib.planc_time_totals.argtypes = [ctypes.c_char_p]
 
+_lib.planc_time_report.restype  = ctypes.c_void_p
+_lib.planc_time_report.argtypes = [
+    ctypes.c_char_p,  # db_path
+    ctypes.c_int,     # has_date_from
+    ctypes.c_char_p,  # date_from  (may be NULL)
+    ctypes.c_int,     # has_date_to
+    ctypes.c_char_p,  # date_to    (may be NULL)
+]
 
-def time_start(task_id: int) -> None:
+_lib.planc_time_update.restype  = ctypes.c_int
+_lib.planc_time_update.argtypes = [
+    ctypes.c_char_p,  # db_path
+    ctypes.c_int,     # session_id
+    ctypes.c_char_p,  # started_at
+    ctypes.c_char_p,  # stopped_at (may be NULL)
+    ctypes.c_char_p,  # notes
+    ctypes.c_char_p,  # err_buf
+    ctypes.c_size_t,  # err_size
+]
+
+
+def time_start(task_id: int, notes: str = "") -> None:
     err = ctypes.create_string_buffer(256)
-    if _lib.planc_time_start(_db_path(), task_id, err, 256) != 0:
+    if _lib.planc_time_start(_db_path(), task_id, notes.encode(), err, 256) != 0:
         raise RuntimeError(err.value.decode())
 
 
-def time_stop(task_id: int) -> None:
+def time_stop(task_id: int, notes: str = "") -> None:
     err = ctypes.create_string_buffer(256)
-    if _lib.planc_time_stop(_db_path(), task_id, err, 256) != 0:
+    if _lib.planc_time_stop(_db_path(), task_id, notes.encode(), err, 256) != 0:
         raise RuntimeError(err.value.decode())
 
 
@@ -215,4 +245,33 @@ def time_totals() -> list[dict]:
     ptr = _lib.planc_time_totals(_db_path())
     if ptr is None:
         raise RuntimeError("planc_time_totals returned NULL")
+    return json.loads(_read_and_free(ptr))
+
+
+def time_update_session(session_id: int,
+                        started_at: str,
+                        stopped_at: str | None,
+                        notes: str) -> None:
+    err = ctypes.create_string_buffer(256)
+    result = _lib.planc_time_update(
+        _db_path(),
+        session_id,
+        started_at.encode(),
+        stopped_at.encode() if stopped_at else None,
+        notes.encode(),
+        err, 256,
+    )
+    if result != 0:
+        raise RuntimeError(err.value.decode())
+
+
+def time_report(date_from: str | None = None,
+                date_to:   str | None = None) -> list[dict]:
+    ptr = _lib.planc_time_report(
+        _db_path(),
+        int(date_from is not None), date_from.encode() if date_from else None,
+        int(date_to   is not None), date_to.encode()   if date_to   else None,
+    )
+    if ptr is None:
+        raise RuntimeError("planc_time_report returned NULL")
     return json.loads(_read_and_free(ptr))

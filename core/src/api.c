@@ -31,8 +31,10 @@ static int item_to_json(Strbuf *sb, const PlanItem *item) {
 
 char *planc_list(const char *db_path,
                  int show_all,
-                 int has_status,   const char *status_s,
-                 int has_priority, const char *priority_s) {
+                 int has_status,    const char *status_s,
+                 int has_priority,  const char *priority_s,
+                 int has_cat_id,    int cat_id,
+                 int has_subcat_id, int subcat_id) {
     PlanList list;
     plan_list_init(&list);
     if (storage_load(db_path, &list) != 0) {
@@ -62,7 +64,9 @@ char *planc_list(const char *db_path,
                     if (item->status == PLAN_STATUS_ARCHIVED) continue;
                 }
             }
-            if (has_priority && item->priority != filter_priority) continue;
+            if (has_priority  && item->priority    != filter_priority) continue;
+            if (has_cat_id    && item->category_id != cat_id)         continue;
+            if (has_subcat_id && item->subcat_id   != subcat_id)      continue;
 
             if (!first && sb_append(&sb, ",") != 0) goto fail_sb;
             if (item_to_json(&sb, item) != 0) goto fail_sb;

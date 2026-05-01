@@ -32,14 +32,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # application code
 COPY api/ api/
 
+# migration SQL scripts
+COPY migrations/ migrations/
+
 # planc.db and auth.db are expected here (mounted as a named volume)
 ENV PLANC_DB_PATH=/data/planc.db
 ENV PLANC_AUTH_DB_PATH=/data/auth.db
 
 EXPOSE 8000
 
-# --app-dir tells uvicorn where to find main.py without needing PYTHONPATH
-CMD ["uvicorn", "main:app", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--app-dir", "/app/api"]
+# run migrations then start the server; migrations are idempotent so
+# re-deploying without a schema change is always safe
+CMD ["sh", "-c", "python3 /app/api/migrate.py && uvicorn main:app --host 0.0.0.0 --port 8000 --app-dir /app/api"]

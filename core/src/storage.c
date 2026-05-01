@@ -57,19 +57,14 @@ int storage_db_open(const char *path, sqlite3 **db) {
         "  id          INTEGER PRIMARY KEY,"
         "  task_id     INTEGER NOT NULL,"
         "  started_at  TEXT    NOT NULL,"
-        "  stopped_at  TEXT"
+        "  stopped_at  TEXT,"
+        "  notes       TEXT    NOT NULL DEFAULT ''"
         ");";
 
     if (sqlite3_exec(*db, schema, NULL, NULL, NULL) != SQLITE_OK) {
         sqlite3_close(*db);
         return -1;
     }
-
-    /* migrate: add notes column to existing timesheet tables; ignore error
-     * when the column is already present (SQLITE_ERROR is returned) */
-    sqlite3_exec(*db,
-        "ALTER TABLE timesheet ADD COLUMN notes TEXT NOT NULL DEFAULT ''",
-        NULL, NULL, NULL);
 
     return 0;
 }

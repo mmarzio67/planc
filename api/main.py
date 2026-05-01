@@ -191,6 +191,45 @@ def add_subcategory(body: NewSubcategory,
     return {"id": new_id}
 
 
+class RenameBody(BaseModel):
+    name: str
+
+
+@app.put("/categories/{cat_id}", status_code=status.HTTP_204_NO_CONTENT)
+def rename_category(cat_id: int, body: RenameBody,
+                    _: Annotated[dict, Depends(current_user)]):
+    try:
+        planc.rename_category(cat_id, body.name)
+    except RuntimeError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.delete("/categories/{cat_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_category(cat_id: int, _: Annotated[dict, Depends(current_user)]):
+    try:
+        planc.delete_category(cat_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.put("/subcategories/{subcat_id}", status_code=status.HTTP_204_NO_CONTENT)
+def rename_subcategory(subcat_id: int, body: RenameBody,
+                       _: Annotated[dict, Depends(current_user)]):
+    try:
+        planc.rename_subcategory(subcat_id, body.name)
+    except RuntimeError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.delete("/subcategories/{subcat_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_subcategory(subcat_id: int,
+                       _: Annotated[dict, Depends(current_user)]):
+    try:
+        planc.delete_subcategory(subcat_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 # ─── time tracking routes ────────────────────────────────────────────────────
 
 class TimerNotes(BaseModel):

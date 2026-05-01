@@ -458,10 +458,40 @@ def show_main() -> None:
 
         with col_cat:
             st.subheader("Categories")
-            for c in cats_data.get("categories", []):
-                st.write(f"[{c['id']}] {c['name']}")
+            category_list = cats_data.get("categories", [])
+            if category_list:
+                # selectbox is outside the form so changing selection rerenders
+                # the form below with the chosen category's name pre-filled
+                cat_opts = {c["name"]: c for c in category_list}
+                sel_cat_name = st.selectbox("Select", list(cat_opts),
+                                            key="sel_cat_manage",
+                                            label_visibility="collapsed")
+                sel_cat = cat_opts[sel_cat_name]
+                # form key includes the id: changing selection = new form key
+                # = Streamlit renders it fresh with the new value=
+                with st.form(f"cat_action_{sel_cat['id']}"):
+                    new_name  = st.text_input("New name", value=sel_cat["name"])
+                    btn_l, btn_r = st.columns(2)
+                    rename_ok = btn_l.form_submit_button("Rename",
+                                                         use_container_width=True)
+                    delete_ok = btn_r.form_submit_button("Delete",
+                                                         use_container_width=True)
+                    if rename_ok and new_name.strip():
+                        try:
+                            api.rename_category(token, sel_cat["id"], new_name.strip())
+                            st.rerun()
+                        except PlanCError as e:
+                            st.error(str(e))
+                    if delete_ok:
+                        try:
+                            api.delete_category(token, sel_cat["id"])
+                            st.rerun()
+                        except PlanCError as e:
+                            st.error(str(e))
+
+            st.divider()
             with st.form(f"add_cat_{st.session_state['_ver_add_cat']}"):
-                cat_name = st.text_input("Name")
+                cat_name = st.text_input("New category name")
                 if st.form_submit_button("Add category"):
                     try:
                         api.add_category(token, cat_name.strip())
@@ -472,11 +502,38 @@ def show_main() -> None:
 
         with col_sub:
             st.subheader("Subcategories")
-            cat_names = {c["id"]: c["name"] for c in cats_data.get("categories", [])}
-            for s in cats_data.get("subcategories", []):
-                parent = cat_names.get(s["category_id"], "?")
-                st.write(f"[{s['id']}] {parent} / {s['name']}")
+            cat_names  = {c["id"]: c["name"] for c in cats_data.get("categories", [])}
+            subcat_list = cats_data.get("subcategories", [])
+            if subcat_list:
+                subcat_opts = {
+                    f"{cat_names.get(s['category_id'], '?')} / {s['name']}": s
+                    for s in subcat_list
+                }
+                sel_sub_label = st.selectbox("Select", list(subcat_opts),
+                                             key="sel_subcat_manage",
+                                             label_visibility="collapsed")
+                sel_sub = subcat_opts[sel_sub_label]
+                with st.form(f"subcat_action_{sel_sub['id']}"):
+                    new_name  = st.text_input("New name", value=sel_sub["name"])
+                    btn_l, btn_r = st.columns(2)
+                    rename_ok = btn_l.form_submit_button("Rename",
+                                                         use_container_width=True)
+                    delete_ok = btn_r.form_submit_button("Delete",
+                                                         use_container_width=True)
+                    if rename_ok and new_name.strip():
+                        try:
+                            api.rename_subcategory(token, sel_sub["id"], new_name.strip())
+                            st.rerun()
+                        except PlanCError as e:
+                            st.error(str(e))
+                    if delete_ok:
+                        try:
+                            api.delete_subcategory(token, sel_sub["id"])
+                            st.rerun()
+                        except PlanCError as e:
+                            st.error(str(e))
 
+            st.divider()
             if cats:
                 with st.form(f"add_subcat_{st.session_state['_ver_add_subcat']}"):
                     cat_choices = {f"[{c['id']}] {c['name']}": c["id"] for c in cats}

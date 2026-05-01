@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sqlite3.h>
 
 #include "category.h"
 #include "plan.h"
@@ -313,6 +314,183 @@ fail:
     category_list_free(&cats);
     subcat_list_free(&subcats);
     return -1;
+}
+
+/* ── category / subcategory rename and delete ─────────────────────────────
+ *
+ * These functions bypass the in-memory CategoryList/PlanList model and
+ * operate directly on SQLite because cascading deletes span tables that
+ * the in-memory layer handles separately.
+ *
+ * Helper: prepare, bind one int param, step, finalize.
+ * Returns 0 on success or fills err_buf and returns -1.
+ * Does NOT roll back — the caller owns the transaction. */
+static int exec_delete_int(sqlite3 *db, const char *sql, int param,
+                           char *err_buf, size_t err_size) {
+    sqlite3_stmt *stmt;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        snprintf(err_buf, err_size, "prepare failed: %s", sqlite3_errmsg(db));
+        return -1;
+    }
+    sqlite3_bind_int(stmt, 1, param);
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE) {
+        snprintf(err_buf, err_size, "delete failed: %s", sqlite3_errmsg(db));
+        return -1;
+    }
+    return 0;
+}
+
+int planc_cat_rename(const char *db_path, int cat_id, const char *new_name,
+                     char *err_buf, size_t err_size) {
+    sqlite3 *db;
+    if (storage_db_open(db_path, &db) != 0) {
+        snprintf(err_buf, err_size, "could not open database");
+        return -1;
+    }
+
+    sqlite3_stmt *stmt;
+    if (sqlite3_prepare_v2(db,
+            "UPDATE categories SET name = ? WHERE id = ?",
+            -1, &stmt, NULL) != SQLITE_OK) {
+        snprintf(err_buf, err_size, "prepare failed: %s", sqlite3_errmsg(db));
+        sqlite3_close(db); return -1;
+    }
+
+    sqlite3_bind_text(stmt, 1, new_name, -1, SQLITE_STATIC);
+    sqlite3_bind_int (stmt, 2, cat_id);
+
+    int rc      = sqlite3_step(stmt);
+    int changed = sqlite3_changes(db);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        snprintf(err_buf, err_size, "update failed: %s", sqlite3_errmsg(db));
+        sqlite3_close(db); return -1;
+    }
+    if (changed == 0) {
+        snprintf(err_buf, err_size, "category %d not found", cat_id);
+        sqlite3_close(db); return -1;
+    }
+
+    sqlite3_close(db);
+    return 0;
+}
+
+int planc_cat_delete(const char *db_path, int cat_id,
+                     char *err_buf, size_t err_size) {
+    sqlite3 *db;
+    if (storage_db_open(db_path, &db) != 0) {
+        snprintf(err_buf, err_size, "could not open database");
+        return -1;
+    }
+
+    if (sqlite3_exec(db, "BEGIN TRANSACTION", NULL, NULL, NULL) != SQLITE_OK) {
+        snprintf(err_buf, err_size, "begin transaction failed");
+        sqlite3_close(db); return -1;
+    }
+
+    /* cascade order matters: timesheet → items → subcategories → category */
+    if (exec_delete_int(db,
+            "DELETE FROM timesheet "
+            "WHERE task_id IN (SELECT id FROM items WHERE category_id = ?)",
+            cat_id, err_buf, err_size) != 0 ||
+        exec_delete_int(db,
+            "DELETE FROM items WHERE category_id = ?",
+            cat_id, err_buf, err_size) != 0 ||
+        exec_delete_int(db,
+            "DELETE FROM subcategories WHERE category_id = ?",
+            cat_id, err_buf, err_size) != 0 ||
+        exec_delete_int(db,
+            "DELETE FROM categories WHERE id = ?",
+            cat_id, err_buf, err_size) != 0) {
+        sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+        sqlite3_close(db); return -1;
+    }
+
+    if (sqlite3_exec(db, "COMMIT", NULL, NULL, NULL) != SQLITE_OK) {
+        snprintf(err_buf, err_size, "commit failed");
+        sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+        sqlite3_close(db); return -1;
+    }
+
+    sqlite3_close(db);
+    return 0;
+}
+
+int planc_subcat_rename(const char *db_path, int subcat_id, const char *new_name,
+                        char *err_buf, size_t err_size) {
+    sqlite3 *db;
+    if (storage_db_open(db_path, &db) != 0) {
+        snprintf(err_buf, err_size, "could not open database");
+        return -1;
+    }
+
+    sqlite3_stmt *stmt;
+    if (sqlite3_prepare_v2(db,
+            "UPDATE subcategories SET name = ? WHERE id = ?",
+            -1, &stmt, NULL) != SQLITE_OK) {
+        snprintf(err_buf, err_size, "prepare failed: %s", sqlite3_errmsg(db));
+        sqlite3_close(db); return -1;
+    }
+
+    sqlite3_bind_text(stmt, 1, new_name, -1, SQLITE_STATIC);
+    sqlite3_bind_int (stmt, 2, subcat_id);
+
+    int rc      = sqlite3_step(stmt);
+    int changed = sqlite3_changes(db);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        snprintf(err_buf, err_size, "update failed: %s", sqlite3_errmsg(db));
+        sqlite3_close(db); return -1;
+    }
+    if (changed == 0) {
+        snprintf(err_buf, err_size, "subcategory %d not found", subcat_id);
+        sqlite3_close(db); return -1;
+    }
+
+    sqlite3_close(db);
+    return 0;
+}
+
+int planc_subcat_delete(const char *db_path, int subcat_id,
+                        char *err_buf, size_t err_size) {
+    sqlite3 *db;
+    if (storage_db_open(db_path, &db) != 0) {
+        snprintf(err_buf, err_size, "could not open database");
+        return -1;
+    }
+
+    if (sqlite3_exec(db, "BEGIN TRANSACTION", NULL, NULL, NULL) != SQLITE_OK) {
+        snprintf(err_buf, err_size, "begin transaction failed");
+        sqlite3_close(db); return -1;
+    }
+
+    /* cascade order: timesheet → items → subcategory */
+    if (exec_delete_int(db,
+            "DELETE FROM timesheet "
+            "WHERE task_id IN (SELECT id FROM items WHERE subcat_id = ?)",
+            subcat_id, err_buf, err_size) != 0 ||
+        exec_delete_int(db,
+            "DELETE FROM items WHERE subcat_id = ?",
+            subcat_id, err_buf, err_size) != 0 ||
+        exec_delete_int(db,
+            "DELETE FROM subcategories WHERE id = ?",
+            subcat_id, err_buf, err_size) != 0) {
+        sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+        sqlite3_close(db); return -1;
+    }
+
+    if (sqlite3_exec(db, "COMMIT", NULL, NULL, NULL) != SQLITE_OK) {
+        snprintf(err_buf, err_size, "commit failed");
+        sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+        sqlite3_close(db); return -1;
+    }
+
+    sqlite3_close(db);
+    return 0;
 }
 
 void planc_free(char *ptr) {

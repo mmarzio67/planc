@@ -55,6 +55,24 @@ int planc_cat_add(const char *db_path, const char *name,
 int planc_subcat_add(const char *db_path, int cat_id, const char *name,
                      char *err_buf, size_t err_size);
 
+/* Rename a category. Returns 0 on success, -1 on error. */
+int planc_cat_rename(const char *db_path, int cat_id, const char *new_name,
+                     char *err_buf, size_t err_size);
+
+/* Delete a category and all its subcategories, items, and timesheet entries.
+ * Returns 0 on success, -1 on error. */
+int planc_cat_delete(const char *db_path, int cat_id,
+                     char *err_buf, size_t err_size);
+
+/* Rename a subcategory. Returns 0 on success, -1 on error. */
+int planc_subcat_rename(const char *db_path, int subcat_id, const char *new_name,
+                        char *err_buf, size_t err_size);
+
+/* Delete a subcategory and all its items and timesheet entries.
+ * Returns 0 on success, -1 on error. */
+int planc_subcat_delete(const char *db_path, int subcat_id,
+                        char *err_buf, size_t err_size);
+
 /* Release any string returned by the functions above. */
 void planc_free(char *ptr);
 

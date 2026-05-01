@@ -82,6 +82,40 @@ _lib.planc_subcat_add.argtypes = [
     ctypes.c_size_t,
 ]
 
+_lib.planc_cat_rename.restype  = ctypes.c_int
+_lib.planc_cat_rename.argtypes = [
+    ctypes.c_char_p,  # db_path
+    ctypes.c_int,     # cat_id
+    ctypes.c_char_p,  # new_name
+    ctypes.c_char_p,  # err_buf
+    ctypes.c_size_t,
+]
+
+_lib.planc_cat_delete.restype  = ctypes.c_int
+_lib.planc_cat_delete.argtypes = [
+    ctypes.c_char_p,  # db_path
+    ctypes.c_int,     # cat_id
+    ctypes.c_char_p,  # err_buf
+    ctypes.c_size_t,
+]
+
+_lib.planc_subcat_rename.restype  = ctypes.c_int
+_lib.planc_subcat_rename.argtypes = [
+    ctypes.c_char_p,  # db_path
+    ctypes.c_int,     # subcat_id
+    ctypes.c_char_p,  # new_name
+    ctypes.c_char_p,  # err_buf
+    ctypes.c_size_t,
+]
+
+_lib.planc_subcat_delete.restype  = ctypes.c_int
+_lib.planc_subcat_delete.argtypes = [
+    ctypes.c_char_p,  # db_path
+    ctypes.c_int,     # subcat_id
+    ctypes.c_char_p,  # err_buf
+    ctypes.c_size_t,
+]
+
 _lib.planc_free.restype  = None
 _lib.planc_free.argtypes = [ctypes.c_void_p]
 
@@ -181,6 +215,34 @@ def add_subcategory(cat_id: int, name: str) -> int:
     if result < 0:
         raise RuntimeError(err.value.decode())
     return result
+
+
+def rename_category(cat_id: int, new_name: str) -> None:
+    err = ctypes.create_string_buffer(256)
+    result = _lib.planc_cat_rename(_db_path(), cat_id, new_name.encode(), err, 256)
+    if result != 0:
+        raise RuntimeError(err.value.decode())
+
+
+def delete_category(cat_id: int) -> None:
+    err = ctypes.create_string_buffer(256)
+    result = _lib.planc_cat_delete(_db_path(), cat_id, err, 256)
+    if result != 0:
+        raise RuntimeError(err.value.decode())
+
+
+def rename_subcategory(subcat_id: int, new_name: str) -> None:
+    err = ctypes.create_string_buffer(256)
+    result = _lib.planc_subcat_rename(_db_path(), subcat_id, new_name.encode(), err, 256)
+    if result != 0:
+        raise RuntimeError(err.value.decode())
+
+
+def delete_subcategory(subcat_id: int) -> None:
+    err = ctypes.create_string_buffer(256)
+    result = _lib.planc_subcat_delete(_db_path(), subcat_id, err, 256)
+    if result != 0:
+        raise RuntimeError(err.value.decode())
 
 
 # ── time tracking ─────────────────────────────────────────────────────────────

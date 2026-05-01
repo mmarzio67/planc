@@ -118,6 +118,28 @@ def add_subcategory(token: str, cat_id: int, name: str) -> int:
     return r.json()["id"]
 
 
+def rename_category(token: str, cat_id: int, new_name: str) -> None:
+    r = requests.put(f"{BASE_URL}/categories/{cat_id}",
+                     json={"name": new_name}, headers=_h(token))
+    _raise(r)
+
+
+def delete_category(token: str, cat_id: int) -> None:
+    r = requests.delete(f"{BASE_URL}/categories/{cat_id}", headers=_h(token))
+    _raise(r)
+
+
+def rename_subcategory(token: str, subcat_id: int, new_name: str) -> None:
+    r = requests.put(f"{BASE_URL}/subcategories/{subcat_id}",
+                     json={"name": new_name}, headers=_h(token))
+    _raise(r)
+
+
+def delete_subcategory(token: str, subcat_id: int) -> None:
+    r = requests.delete(f"{BASE_URL}/subcategories/{subcat_id}", headers=_h(token))
+    _raise(r)
+
+
 # ─── time tracking ─────────────────────────────────────────────────────────
 
 def time_start(token: str, task_id: int, notes: str = "") -> None:

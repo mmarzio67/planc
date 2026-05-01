@@ -40,10 +40,21 @@ static inline int sb_append_int(Strbuf *sb, int n) {
 static inline int sb_append_json_str(Strbuf *sb, const char *s) {
     if (sb_append(sb, "\"") != 0) return -1;
     for (; *s; ++s) {
-        char tmp[3] = {'\0', '\0', '\0'};
-        if (*s == '"' || *s == '\\') { tmp[0] = '\\'; tmp[1] = *s; }
-        else { tmp[0] = *s; }
-        if (sb_append(sb, tmp) != 0) return -1;
+        unsigned char c = (unsigned char)*s;
+        const char *esc = NULL;
+        char u[7];
+        if      (c == '"')  esc = "\\\"";
+        else if (c == '\\') esc = "\\\\";
+        else if (c == '\n') esc = "\\n";
+        else if (c == '\r') esc = "\\r";
+        else if (c == '\t') esc = "\\t";
+        else if (c < 0x20) { snprintf(u, sizeof(u), "\\u%04x", c); esc = u; }
+        if (esc) {
+            if (sb_append(sb, esc) != 0) return -1;
+        } else {
+            char tmp[2] = {*s, '\0'};
+            if (sb_append(sb, tmp) != 0) return -1;
+        }
     }
     return sb_append(sb, "\"");
 }
